@@ -1,47 +1,63 @@
-use starknet::ContractAddress;
+use starknet::{ContractAddress};
+use snforge_std::{declare, ContractClassTrait, DeclareResultTrait, start_cheat_caller_address};
+use hello_starknet::Counter::{
+    ICounterDispatcher, ICounterDispatcherTrait, ICounterSafeDispatcher, ICounterSafeDispatcherTrait
+};
 
-use snforge_std::{declare, ContractClassTrait, DeclareResultTrait};
+pub mod Accounts {
+    use starknet::ContractAddress;
+    use core::traits::TryInto;
 
-use count_contract::IHelloStarknetSafeDispatcher;
-use count_contract::IHelloStarknetSafeDispatcherTrait;
-use count_contract::IHelloStarknetDispatcher;
-use count_contract::IHelloStarknetDispatcherTrait;
+    pub fn admin() -> ContractAddress {
+        'admin'.try_into().unwrap()
+    }
 
-fn deploy_contract(name: ByteArray) -> ContractAddress {
+    pub fn account1() -> ContractAddress {
+        'account1'.try_into().unwrap()
+    }
+}
+
+fn deploy(name: ByteArray) -> ContractAddress {
     let contract = declare(name).unwrap().contract_class();
-    let (contract_address, _) = contract.deploy(@ArrayTrait::new()).unwrap();
+    let constructor_args = array![Accounts::admin().into()];
+    let (contract_address, _) = contract.deploy(@constructor_args).unwrap();
     contract_address
 }
 
 #[test]
-fn test_increase_balance() {
-    let contract_address = deploy_contract("HelloStarknet");
+fn test_deployment_was_successful() {
+    let contract_address = deploy("Counter");
 
-    let dispatcher = IHelloStarknetDispatcher { contract_address };
+    let counter_dispatcher = ICounterDispatcher { contract_address };
 
-    let balance_before = dispatcher.get_balance();
-    assert(balance_before == 0, 'Invalid balance');
+    let admin_address: ContractAddress = counter_dispatcher.get_admin().try_into().unwrap();
 
-    dispatcher.increase_balance(42);
-
-    let balance_after = dispatcher.get_balance();
-    assert(balance_after == 42, 'Invalid balance');
+    assert_eq!(Accounts::admin(), admin_address);
 }
 
 #[test]
-#[feature("safe_dispatcher")]
-fn test_cannot_increase_balance_with_zero_value() {
-    let contract_address = deploy_contract("HelloStarknet");
+#[should_panic(expected: 'caller not admin')]
+fn test_set_count_should_panic_when_called_from_unauthorised_address() {
+    let contract_address = deploy("Counter");
 
-    let safe_dispatcher = IHelloStarknetSafeDispatcher { contract_address };
+    let counter_dispatcher = ICounterDispatcher { contract_address };
 
-    let balance_before = safe_dispatcher.get_balance().unwrap();
-    assert(balance_before == 0, 'Invalid balance');
+    start_cheat_caller_address(contract_address, Accounts::account1());
 
-    match safe_dispatcher.increase_balance(0) {
+    counter_dispatcher.set_count(99);
+}
+
+// SafeDispatcher
+#[test]
+fn test_set_owner_should_panic_when_called_with_zero_value() {
+    let contract_address = deploy("Counter");
+
+    let counter_safe_dispatcher = ICounterSafeDispatcher { contract_address };
+
+    start_cheat_caller_address(contract_address, Accounts::admin());
+
+    match counter_safe_dispatcher.set_count(0) {
         Result::Ok(_) => core::panic_with_felt252('Should have panicked'),
-        Result::Err(panic_data) => {
-            assert(*panic_data.at(0) == 'Amount cannot be 0', *panic_data.at(0));
-        }
-    };
+        Result::Err(panic_data) => { assert(*panic_data.at(0) == 'zero value', *panic_data.at(0)); }
+    }
 }
