@@ -39,7 +39,7 @@ pub mod Counter {
         Current_Count: u64,
         Updated_By: ContractAddress,
     }
-    
+
     #[constructor]
     fn constructor(ref self: ContractState, admin_address: ContractAddress) {
         self.admin.write(admin_address);
@@ -55,7 +55,7 @@ pub mod Counter {
             assert(value > 0, 'zero value');
 
             self.count.write(self.count.read() + value);
-            // self.emit( { Current_Count: value, Updated_By: admin });
+            self.emit(Update { Current_Count: value, Updated_By: admin });
         }
 
         fn get_count(self: @ContractState) -> u64 {
